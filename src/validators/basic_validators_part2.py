@@ -32,9 +32,13 @@ class BasicValidatorsPart2:
             r'^[a-z]{1,3}\d{6,}$',                  # a123456
             r'^(info|contact|support|sales).*',     # emails genéricos
             r'.*sospechoso.*',                      # palabra "sospechoso"
-            r'.*fake.*|.*spam.*|.*bot.*',           # palabras spam
+            r'.*fake.*|.*spam.*|.*bot.*|.*automated.*',           # palabras spam
             r'^[a-z]+_[a-z]+\d{4,}$',              # user_word1234
             r'^[a-z]{1,2}\d{8,}$'                   # ab12345678
+            r'.*micr[o0]s[o0]ft.*',                 # microsoft variations
+            r'.*g[o0]{2}[gl]le.*',                  # google variations  
+            r'.*amaz[o0]n.*',                       # amazon variations
+        
         ]
         
         logger.info(f"BasicValidatorsPart2 inicializado")

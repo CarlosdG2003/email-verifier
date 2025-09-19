@@ -11,6 +11,7 @@ from src.models.validation_result import ValidationResult, ValidationLevels, Ver
 from src.validators.basic_validators_part1 import BasicValidatorsPart1
 from src.validators.basic_validators_part2 import BasicValidatorsPart2
 from src.validators.dns_validators import DNSValidators
+from .validators.smtp_validators import SMTPValidators
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class EmailVerifier:
         self.basic_part1 = BasicValidatorsPart1()
         self.basic_part2 = BasicValidatorsPart2()
         self.dns_validators = DNSValidators(timeout=dns_timeout)
+        self.smtp_validators = SMTPValidators(timeout=15)
         
         try:
             from .validators.advanced_dns_validators import AdvancedDNSValidators
@@ -168,6 +170,13 @@ class EmailVerifier:
             # Fallback si no se pudo cargar AdvancedDNSValidators
             results["mx_domain_consistency"] = {"is_valid": True, "score": 80, "details": {"status": "not_available"}}
             results["domain_registration"] = {"is_valid": True, "score": 80, "details": {"status": "not_available"}}
+
+        # Validaciones SMTP (13-14)
+        mailbox_result = self.smtp_validators.check_mailbox_exists(email)
+        results["mailbox_exists"] = mailbox_result.to_dict()
+
+        acceptance_result = self.smtp_validators.check_mail_acceptance(email)
+        results["mail_acceptance"] = acceptance_result.to_dict()
         
         # Placeholder para validaciones futuras 13-23
         results.update({
