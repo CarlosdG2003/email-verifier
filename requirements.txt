@@ -1,0 +1,26 @@
+# EMAIL VERIFIER - DEPENDENCIAS BÁSICAS
+
+# Core dependencies (esenciales para empezar)
+dnspython>=2.3.0          # DNS queries (MX, SPF, DKIM, DMARC)
+requests>=2.28.0          # HTTP requests
+python-whois>=0.8.0       # WHOIS information
+validators>=0.20.0        # Email/URL validation
+tld>=0.12.6               # Top-level domain validation
+
+# Web scraping (para validaciones avanzadas)
+beautifulsoup4>=4.11.0    # HTML parsing
+lxml>=4.9.0               # Faster XML/HTML parser
+
+# Configuration and logging
+pyyaml>=6.0               # YAML config files
+python-dotenv>=1.0.0      # .env file support
+colorlog>=6.7.0           # Colored logging
+
+# Optional: Selenium (solo si necesitas JavaScript scraping)
+# selenium>=4.8.0
+
+# Optional: HaveIBeenPwned (versión correcta)
+# pyhaveIbeenpwned>=2.0.0
+
+# Optional: Cache (para optimizar rendimiento)
+# redis>=4.5.0
