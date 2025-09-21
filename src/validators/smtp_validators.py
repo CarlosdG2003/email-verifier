@@ -6,6 +6,7 @@ import smtplib
 import socket
 import time
 import logging
+import dns.resolver
 from typing import Dict, Any, Optional
 from src.models.validation_result import ValidationResult
 
@@ -239,18 +240,28 @@ class SMTPValidators:
     def _get_mx_server(self, domain: str) -> Optional[str]:
         """Obtiene el servidor MX principal del dominio"""
         try:
-            import dns.resolver
             resolver = dns.resolver.Resolver()
             resolver.timeout = 5
             resolver.nameservers = ['8.8.8.8', '1.1.1.1']
             
             mx_records = resolver.resolve(domain, 'MX')
             if mx_records:
-                # Ordenar por prioridad (menor número = mayor prioridad)
-                sorted_mx = sorted(mx_records, key=lambda x: x.priority)
-                return str(sorted_mx[0].exchange).rstrip('.')
-        except:
+                # Ordenar por prioridad - manejar tanto 'priority' como 'preference'
+                def get_priority(mx):
+                    if hasattr(mx, 'priority'):
+                        return mx.priority
+                    elif hasattr(mx, 'preference'):
+                        return mx.preference
+                    else:
+                        return 0  # Fallback
+                
+                sorted_mx = sorted(mx_records, key=get_priority)
+                mx_server = str(sorted_mx[0].exchange).rstrip('.')
+                return mx_server
+                
+        except Exception as e:
             pass
+            
         return None
     
     def check_all_smtp_validations(self, email: str) -> Dict[str, ValidationResult]:

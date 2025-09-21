@@ -11,7 +11,7 @@ from src.models.validation_result import ValidationResult, ValidationLevels, Ver
 from src.validators.basic_validators_part1 import BasicValidatorsPart1
 from src.validators.basic_validators_part2 import BasicValidatorsPart2
 from src.validators.dns_validators import DNSValidators
-from .validators.smtp_validators import SMTPValidators
+from src.validators.smtp_validators import SMTPValidators
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class EmailVerifier:
         self.smtp_validators = SMTPValidators(timeout=15)
         
         try:
-            from .validators.advanced_dns_validators import AdvancedDNSValidators
+            from src.validators.advanced_dns_validators import AdvancedDNSValidators
             self.advanced_dns = AdvancedDNSValidators(timeout=dns_timeout)
         except ImportError as e:
             logger.warning(f"No se pudo cargar AdvancedDNSValidators: {e}")
@@ -170,7 +170,7 @@ class EmailVerifier:
             # Fallback si no se pudo cargar AdvancedDNSValidators
             results["mx_domain_consistency"] = {"is_valid": True, "score": 80, "details": {"status": "not_available"}}
             results["domain_registration"] = {"is_valid": True, "score": 80, "details": {"status": "not_available"}}
-
+        
         # Validaciones SMTP (13-14)
         mailbox_result = self.smtp_validators.check_mailbox_exists(email)
         results["mailbox_exists"] = mailbox_result.to_dict()
@@ -178,9 +178,8 @@ class EmailVerifier:
         acceptance_result = self.smtp_validators.check_mail_acceptance(email)
         results["mail_acceptance"] = acceptance_result.to_dict()
         
-        # Placeholder para validaciones futuras 13-23
+        # Placeholder para validaciones futuras 15-23
         results.update({
-            "mailbox_exists": {"is_valid": True, "score": 90, "details": {"status": "not_implemented"}},
             "password_breaches": {
                 "found_in_breaches": False,
                 "breach_count": 0,
@@ -307,5 +306,6 @@ class EmailVerifier:
             "blacklist_domains": len(self.basic_part2.blacklist_domains),
             "suspicious_patterns": len(self.basic_part2.suspicious_patterns),
             "dkim_selectors": len(self.dns_validators.common_dkim_selectors),
-            "dns_timeout": self.dns_validators.timeout
+            "dns_timeout": self.dns_validators.timeout,
+            "smtp_timeout": self.smtp_validators.timeout
         }
