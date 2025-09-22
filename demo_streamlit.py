@@ -47,7 +47,7 @@ def validate_email_via_api(email, level):
     """Validar email usando la API"""
     try:
         payload = {"email": email, "level": level}
-        response = requests.post(f"{API_BASE_URL}/validate", json=payload, timeout=30)
+        response = requests.post(f"{API_BASE_URL}/validate", json=payload, timeout=60)
         
         if response.status_code == 200:
             return response.json(), None

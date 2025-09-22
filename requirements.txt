@@ -16,11 +16,18 @@ pyyaml>=6.0               # YAML config files
 python-dotenv>=1.0.0      # .env file support
 colorlog>=6.7.0           # Colored logging
 
-# Optional: Selenium (solo si necesitas JavaScript scraping)
-# selenium>=4.8.0
+# API dependencies (nuevas para FastAPI)
+fastapi>=0.104.1          # FastAPI framework
+uvicorn[standard]>=0.24.0 # ASGI server
+pydantic[email]>=2.5.0    # Data validation
+pydantic-settings>=2.0.0  # Settings management
+python-multipart>=0.0.6   # Para form data
+email-validator>=2.1.0    # Validación de emails en Pydantic
 
-# Optional: HaveIBeenPwned (versión correcta)
-# pyhaveIbeenpwned>=2.0.0
+# Para procesamiento asíncrono
+celery>=5.3.4             # Background tasks
+redis>=5.0.1              # Cache y message broker
 
-# Optional: Cache (para optimizar rendimiento)
-# redis>=4.5.0
+# Para exportar resultados
+pandas>=2.1.3             # Para CSV/Excel export
+openpyxl>=3.1.2           # Para Excel files

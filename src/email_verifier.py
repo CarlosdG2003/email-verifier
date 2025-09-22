@@ -1,311 +1,158 @@
-"""
-Email Verifier - Clase principal del verificador
-"""
-
-import time
-import logging
+import time, logging
 from typing import Dict, List, Any
 from datetime import datetime
-
 from src.models.validation_result import ValidationResult, ValidationLevels, VerificationStatus
 from src.validators.basic_validators_part1 import BasicValidatorsPart1
 from src.validators.basic_validators_part2 import BasicValidatorsPart2
 from src.validators.dns_validators import DNSValidators
 from src.validators.smtp_validators import SMTPValidators
+from src.validators.advanced_validators import AdvancedValidators
+from src.validators.ip_reputation_validators import IPReputationValidators
+from src.validators.domain_exposure_validators import DomainExposureValidators
 
 logger = logging.getLogger(__name__)
 
 class EmailVerifier:
-    """
-    Verificador de emails con múltiples niveles de validación
-    
-    Niveles:
-    - basic: Validaciones 1-6 (formato, longitud, dominios)
-    - standard: Incluye validaciones DNS (MX, SPF)
-    - professional: Incluye DKIM, DMARC y verificaciones avanzadas
-    """
-    
+    # Inicializa validadores y carga módulos opcionales
     def __init__(self, dns_timeout: int = 5):
         logger.info("Inicializando EmailVerifier...")
-        
-        # Inicializar validadores
-        self.basic_part1 = BasicValidatorsPart1()
-        self.basic_part2 = BasicValidatorsPart2()
+        self.basic_part1, self.basic_part2 = BasicValidatorsPart1(), BasicValidatorsPart2()
         self.dns_validators = DNSValidators(timeout=dns_timeout)
-        self.smtp_validators = SMTPValidators(timeout=15)
-        
+        self.smtp_validators, self.advanced_validators = SMTPValidators(timeout=15), AdvancedValidators(timeout=10)
+        self.ip_reputation_validators = IPReputationValidators(timeout=10)
+        self.domain_exposure_validators = DomainExposureValidators(timeout=10)
         try:
             from src.validators.advanced_dns_validators import AdvancedDNSValidators
             self.advanced_dns = AdvancedDNSValidators(timeout=dns_timeout)
         except ImportError as e:
-            logger.warning(f"No se pudo cargar AdvancedDNSValidators: {e}")
-            self.advanced_dns = None
-        
-        logger.info("EmailVerifier inicializado correctamente")
-    
+            logger.warning(f"No se pudo cargar AdvancedDNSValidators: {e}"); self.advanced_dns = None
+
+    # Verifica un email individual según el nivel de validación
     def verify_email(self, email: str, level: str = "basic") -> Dict[str, Any]:
-        """
-        Verifica un email según el nivel especificado
-        
-        Args:
-            email: Email a verificar
-            level: Nivel de verificación ('basic', 'standard', 'professional')
-        
-        Returns:
-            Diccionario con todos los resultados de la verificación
-        """
-        start_time = time.time()
-        logger.info(f"Iniciando verificación de '{email}' (nivel: {level})")
-        
-        # Validar nivel
-        if not ValidationLevels.is_valid_level(level):
-            level = ValidationLevels.BASIC
-        
-        # Estructura base del resultado
-        result = {
-            "email": email,
-            "level": level,
-            "overall_status": VerificationStatus.VALID,
-            "confidence": 100,
-            "risk_score": 0,
-            "fraud_indicators": [],
-            "basic_checks": {},
-            "standard_checks": {},
-            "professional_checks": {},
-            "recommendations": [],
-            "processing_time_ms": 0,
-            "timestamp": datetime.now().isoformat()
-        }
-        
+        start = time.time(); logger.info(f"Verificando '{email}' nivel: {level}")
+        if not ValidationLevels.is_valid_level(level): level = ValidationLevels.BASIC
+        result = {"email": email,"level": level,"overall_status": VerificationStatus.VALID,"confidence":100,
+                  "risk_score":0,"fraud_indicators":[],"basic_checks":{},"standard_checks":{},
+                  "professional_checks":{},"recommendations":[],"processing_time_ms":0,
+                  "timestamp": datetime.now().isoformat()}
         try:
-            # Validaciones básicas (siempre se ejecutan)
-            logger.info("Ejecutando validaciones básicas...")
-            basic_results = self._run_basic_checks(email)
-            result["basic_checks"] = basic_results
-            
-            # Validaciones estándar
+            result["basic_checks"] = self._run_basic_checks(email)
             if level in [ValidationLevels.STANDARD, ValidationLevels.PROFESSIONAL]:
-                logger.info("Ejecutando validaciones estándar...")
-                standard_results = self._run_standard_checks(email)
-                result["standard_checks"] = standard_results
-                
-            # Validaciones profesionales
+                result["standard_checks"] = self._run_standard_checks(email)
             if level == ValidationLevels.PROFESSIONAL:
-                logger.info("Ejecutando validaciones profesionales...")
-                professional_results = self._run_professional_checks(email)
-                result["professional_checks"] = professional_results
-            
-            # Calcular scores finales
+                result["professional_checks"] = self._run_professional_checks(email)
             self._calculate_final_scores(result)
-            
-            logger.info(f"Verificación completada: {result['overall_status']} (confianza: {result['confidence']}%)")
-            
+            logger.info(f"Verificación completada: {result['overall_status']} ({result['confidence']}%)")
         except Exception as e:
             logger.error(f"Error durante verificación: {e}")
-            result["overall_status"] = VerificationStatus.ERROR
-            result["fraud_indicators"].append(f"Error durante verificación: {str(e)}")
-            result["confidence"] = 0
-        
-        result["processing_time_ms"] = round((time.time() - start_time) * 1000, 2)
-        
+            result.update(overall_status=VerificationStatus.ERROR, confidence=0)
+            result["fraud_indicators"].append(f"Error: {e}")
+        result["processing_time_ms"] = round((time.time()-start)*1000,2)
         return result
-    
-    def _run_basic_checks(self, email: str) -> Dict[str, Any]:
-        """Ejecuta las validaciones básicas (1-6)"""
-        results = {}
-        
-        # Validaciones 1-3
-        format_result = self.basic_part1.check_format(email)
-        results["format"] = format_result.to_dict()
-        
-        length_result = self.basic_part1.check_length(email)
-        results["length"] = length_result.to_dict()
-        
-        disposable_result = self.basic_part1.check_disposable_domain(email)
-        results["disposable_domain"] = disposable_result.to_dict()
-        
-        # Validaciones 4-6
-        free_result = self.basic_part2.check_free_domain(email)
-        results["free_domain"] = free_result.to_dict()
-        
-        dbl_result = self.basic_part2.check_dbl_domain(email)
-        results["dbl_domain"] = dbl_result.to_dict()
-        
-        suspicious_result = self.basic_part2.check_suspicious_username(email)
-        results["suspicious_username"] = suspicious_result.to_dict()
-        
-        return results
-    
-    def _run_standard_checks(self, email: str) -> Dict[str, Any]:
-        """Ejecuta las validaciones estándar (7-8)"""
-        results = {}
-        
-        mx_result = self.dns_validators.check_mx_record(email)
-        results["mx_record"] = mx_result.to_dict()
-        
-        spf_result = self.dns_validators.check_spf_record(email)
-        results["spf_record"] = spf_result.to_dict()
-        
-        return results
-    
-    def _run_professional_checks(self, email: str) -> Dict[str, Any]:
-        """Ejecuta las validaciones profesionales (9-12 y más)"""
-        results = {}
-        
-        # Validaciones DNS básicas (9-10)
-        dkim_result = self.dns_validators.check_dkim_record(email)
-        results["dkim_record"] = dkim_result.to_dict()
-        
-        dmarc_result = self.dns_validators.check_dmarc_record(email)
-        results["dmarc_record"] = dmarc_result.to_dict()
-        
-        # Validaciones DNS avanzadas (11-12)
-        if self.advanced_dns:
-            mx_consistency_result = self.advanced_dns.check_mx_domain_consistency(email)
-            results["mx_domain_consistency"] = mx_consistency_result.to_dict()
-            
-            domain_reg_result = self.advanced_dns.check_domain_registration(email)
-            results["domain_registration"] = domain_reg_result.to_dict()
-        else:
-            # Fallback si no se pudo cargar AdvancedDNSValidators
-            results["mx_domain_consistency"] = {"is_valid": True, "score": 80, "details": {"status": "not_available"}}
-            results["domain_registration"] = {"is_valid": True, "score": 80, "details": {"status": "not_available"}}
-        
-        # Validaciones SMTP (13-14)
-        mailbox_result = self.smtp_validators.check_mailbox_exists(email)
-        results["mailbox_exists"] = mailbox_result.to_dict()
 
-        acceptance_result = self.smtp_validators.check_mail_acceptance(email)
-        results["mail_acceptance"] = acceptance_result.to_dict()
+    # Ejecuta las validaciones básicas (formato, longitud, dominios)
+    def _run_basic_checks(self, email:str)->Dict[str,Any]:
+        b1,b2=self.basic_part1,self.basic_part2
+        return {k:v.to_dict() for k,v in {
+            "format":b1.check_format(email),
+            "length":b1.check_length(email),
+            "disposable_domain":b1.check_disposable_domain(email),
+            "free_domain":b2.check_free_domain(email),
+            "dbl_domain":b2.check_dbl_domain(email),
+            "suspicious_username":b2.check_suspicious_username(email)}.items()}
+
+    # Ejecuta las validaciones estándar (DNS MX/SPF)
+    def _run_standard_checks(self,email:str)->Dict[str,Any]:
+        d=self.dns_validators
+        return {"mx_record":d.check_mx_record(email).to_dict(),
+                "spf_record":d.check_spf_record(email).to_dict()}
+
+    # Ejecuta las validaciones profesionales (DKIM, DMARC, reputación, SMTP, etc.)
+    def _run_professional_checks(self, email: str) -> Dict[str, Any]:
+        d = self.dns_validators
+        adv = self.advanced_validators
+        ip = self.ip_reputation_validators
+        exp = self.domain_exposure_validators
         
-        # Placeholder para validaciones futuras 15-23
-        results.update({
-            "password_breaches": {
-                "found_in_breaches": False,
-                "breach_count": 0,
-                "latest_breach": None,
-                "breached_sites": []
-            },
-            "domain_analysis": {
-                "has_website": True,
-                "ssl_valid": True,
-                "content_quality": 90
-            }
-        })
-        
-        return results
-    
-    def _calculate_final_scores(self, result: Dict[str, Any]) -> None:
-        """Calcula los scores finales y determina el estado general - VERSIÓN SIMPLE QUE FUNCIONA"""
-        all_scores = []
-        fraud_indicators = []
-        recommendations = []
-        
-        # Recopilar scores de todas las validaciones (PROMEDIO SIMPLE)
-        for check_type in ["basic_checks", "standard_checks", "professional_checks"]:
-            checks = result.get(check_type, {})
-            for check_name, check_data in checks.items():
-                if isinstance(check_data, dict) and "score" in check_data:
-                    all_scores.append(check_data["score"])
-                    
-                    # Detectar indicadores de fraude
-                    if check_data["score"] < 50:
-                        if check_name == "disposable_domain" and check_data.get("details", {}).get("is_disposable"):
-                            fraud_indicators.append("Dominio temporal/desechable detectado")
-                        elif check_name == "dbl_domain" and check_data.get("details", {}).get("is_blacklisted"):
-                            fraud_indicators.append("Dominio en lista negra")
-                        elif check_name == "suspicious_username":
-                            fraud_indicators.append("Patrón de username sospechoso")
-                        elif check_name == "format" and not check_data.get("is_valid"):
-                            fraud_indicators.append("Formato de email inválido")
-                        elif check_name == "mx_record":
-                            fraud_indicators.append("Dominio no puede recibir emails")
-        
-        # Calcular confianza promedio (COMO FUNCIONABA ANTES)
-        confidence = round(sum(all_scores) / len(all_scores), 2) if all_scores else 0
-        
-        # ÚNICA regla absoluta: si no tiene MX Y se ejecutaron validaciones DNS
-        standard_checks = result.get("standard_checks", {})
-        if standard_checks:  # Solo si se ejecutaron validaciones DNS
-            mx_check = standard_checks.get("mx_record", {})
-            if mx_check and mx_check.get("score", 100) == 0:
-                confidence = min(confidence, 60)  # Sin MX = máximo 60%
-        
-        # Calcular risk score
-        risk_score = round((100 - confidence) / 10, 1)
-        
-        # Determinar estado general (umbrales originales)
-        if confidence >= 80:
-            overall_status = VerificationStatus.VALID
-        elif confidence >= 60:
-            overall_status = VerificationStatus.RISKY
-        else:
-            overall_status = VerificationStatus.INVALID
-        
-        # Generar recomendaciones
-        if fraud_indicators:
-            recommendations.append("Se detectaron indicadores de riesgo en este email")
-        
-        # Recomendación específica para MX solo si se ejecutó y falló
-        if standard_checks:
-            mx_check = standard_checks.get("mx_record", {})
-            if mx_check and mx_check.get("score", 100) == 0:
-                recommendations.append("Dominio no puede recibir emails (sin registros MX)")
-        
-        # Otras recomendaciones específicas
-        format_check = result.get("basic_checks", {}).get("format", {})
-        if format_check and not format_check.get("is_valid", True):
-            recommendations.append("Formato de email inválido - corregir antes de usar")
-            
-        disposable_check = result.get("basic_checks", {}).get("disposable_domain", {})
-        if disposable_check and disposable_check.get("details", {}).get("is_disposable", False):
-            recommendations.append("Email temporal - se eliminará automáticamente")
-        
-        # Recomendaciones generales
-        if confidence < 70:
-            recommendations.append("Considerar verificación adicional antes de usar este email")
-        if risk_score > 3:
-            recommendations.append("Email de alto riesgo, usar con precaución")
-        if confidence > 90:
-            recommendations.append("Email parece legítimo y seguro")
-        
-        # Actualizar resultado
-        result["confidence"] = confidence
-        result["risk_score"] = risk_score
-        result["overall_status"] = overall_status
-        result["fraud_indicators"] = fraud_indicators
-        result["recommendations"] = recommendations
-    
-    def verify_batch(self, emails: List[str], level: str = "basic") -> List[Dict[str, Any]]:
-        """
-        Verifica múltiples emails
-        
-        Args:
-            emails: Lista de emails a verificar
-            level: Nivel de verificación
-            
-        Returns:
-            Lista con resultados de verificación
-        """
-        logger.info(f"Iniciando verificación en lote de {len(emails)} emails")
-        
-        results = []
-        for i, email in enumerate(emails, 1):
-            logger.info(f"Verificando email {i}/{len(emails)}: {email}")
-            result = self.verify_email(email, level)
-            results.append(result)
-        
-        logger.info(f"Verificación en lote completada: {len(results)} resultados")
-        return results
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Retorna estadísticas de los validadores"""
-        return {
-            "disposable_domains": len(self.basic_part1.disposable_domains),
-            "free_domains": len(self.basic_part2.free_domains),
-            "blacklist_domains": len(self.basic_part2.blacklist_domains),
-            "suspicious_patterns": len(self.basic_part2.suspicious_patterns),
-            "dkim_selectors": len(self.dns_validators.common_dkim_selectors),
-            "dns_timeout": self.dns_validators.timeout,
-            "smtp_timeout": self.smtp_validators.timeout
+        res = {
+            "dkim_record": d.check_dkim_record(email).to_dict(),
+            "dmarc_record": d.check_dmarc_record(email).to_dict()
         }
+        
+        if self.advanced_dns:
+            res.update(
+                mx_domain_consistency=self.advanced_dns.check_mx_domain_consistency(email).to_dict(),
+                domain_registration=self.advanced_dns.check_domain_registration(email).to_dict()
+            )
+        else:
+            res.update(
+                mx_domain_consistency={"is_valid": True, "score": 80, "details": {"status": "not_available"}},
+                domain_registration={"is_valid": True, "score": 80, "details": {"status": "not_available"}}
+            )
+        
+        res.update(
+            mailbox_exists=self.smtp_validators.check_mailbox_exists(email).to_dict(),
+            mail_acceptance=self.smtp_validators.check_mail_acceptance(email).to_dict(),
+            honeypot=adv.check_honeypot(email).to_dict(),
+            domain_reputation=adv.check_domain_reputation(email).to_dict(),
+            ip_reputation=ip.check_ip_reputation(email).to_dict(),
+            rbl_lists=ip.check_rbl_lists(email).to_dict(),
+            domain_age=exp.check_domain_age(email).to_dict(),
+            email_public_exposure=exp.check_email_public_exposure(email).to_dict(),
+            password_breaches={"found_in_breaches": False, "breach_count": 0, "latest_breach": None, "breached_sites": []},
+            domain_analysis={"has_website": True, "ssl_valid": True, "content_quality": 90}
+        )
+        
+        return res
+
+    # Calcula las puntuaciones finales y genera indicadores y recomendaciones de riesgo
+    def _calculate_final_scores(self,result:Dict[str,Any])->None:
+        scores,indicators,recs=[],[],[]
+        for ctype in["basic_checks","standard_checks","professional_checks"]:
+            for name,data in result.get(ctype,{}).items():
+                if isinstance(data,dict) and "score" in data:
+                    scores.append(data["score"]); det=data.get("details",{})
+                    if data["score"]<50:
+                        if name=="disposable_domain"and det.get("is_disposable"):indicators.append("Dominio temporal")
+                        elif name=="dbl_domain"and det.get("is_blacklisted"):indicators.append("Dominio en lista negra")
+                        elif name=="suspicious_username":indicators.append("Username sospechoso")
+                        elif name=="format"and not data.get("is_valid"):indicators.append("Formato inválido")
+                        elif name=="mx_record":indicators.append("Sin MX")
+                        elif name=="honeypot"and det.get("is_honeypot"):indicators.append("Honeypot detectado")
+                        elif name=="domain_reputation"and det.get("reputation_level")in["poor","very_poor"]:indicators.append("Reputación muy baja")
+        conf=round(sum(scores)/len(scores),2)if scores else 0
+        std,prof=result.get("standard_checks",{}),result.get("professional_checks",{})
+        if std.get("mx_record",{}).get("score",100)==0:conf=min(conf,60)
+        if prof.get("honeypot",{}).get("details",{}).get("is_honeypot"):conf=min(conf,20)
+        if prof.get("domain_reputation",{}).get("score",100)<20:conf=min(conf,40)
+        risk=round((100-conf)/10,1)
+        status=VerificationStatus.VALID if conf>=80 else VerificationStatus.RISKY if conf>=60 else VerificationStatus.INVALID
+        if indicators:recs.append("Se detectaron indicadores de riesgo")
+        if std.get("mx_record",{}).get("score",100)==0:recs.append("Dominio sin MX")
+        if prof.get("honeypot",{}).get("details",{}).get("is_honeypot"):recs.append("Honeypot - evitar usar")
+        if prof.get("domain_reputation",{}).get("score",100)<40:recs.append("Dominio con reputación baja")
+        if prof.get("ip_reputation",{}).get("score",100)<40:recs.append("IP reputación baja")
+        if prof.get("rbl_lists",{}).get("details",{}).get("blacklisted_count",0)>0:recs.append("Servidor en listas de spam")
+        if not result.get("basic_checks",{}).get("format",{}).get("is_valid",True):recs.append("Formato inválido")
+        if result.get("basic_checks",{}).get("disposable_domain",{}).get("details",{}).get("is_disposable",False):recs.append("Email temporal")
+        if conf<70:recs.append("Verificación adicional sugerida")
+        if risk>3:recs.append("Email de alto riesgo")
+        if conf>90:recs.append("Email parece seguro")
+        result.update(confidence=conf,risk_score=risk,overall_status=status,
+                      fraud_indicators=indicators,recommendations=recs)
+
+    # Verifica múltiples emails en lote
+    def verify_batch(self,emails:List[str],level:str="basic")->List[Dict[str,Any]]:
+        logger.info(f"Verificación en lote de {len(emails)} emails")
+        return [self.verify_email(e,level) for e in emails]
+
+    # Retorna estadísticas de los validadores y configuraciones
+    def get_stats(self)->Dict[str,Any]:
+        b1,b2,d,adv,ip=self.basic_part1,self.basic_part2,self.dns_validators,self.advanced_validators,self.ip_reputation_validators
+        return {"disposable_domains":len(b1.disposable_domains),"free_domains":len(b2.free_domains),
+                "blacklist_domains":len(b2.blacklist_domains),"suspicious_patterns":len(b2.suspicious_patterns),
+                "dkim_selectors":len(d.common_dkim_selectors),"dns_timeout":d.timeout,"smtp_timeout":self.smtp_validators.timeout,
+                "honeypot_patterns":len(adv.honeypot_patterns),"honeypot_domains":len(adv.honeypot_domains),
+                "trusted_registrars":len(adv.trusted_registrars),"rbl_lists":len(ip.rbl_lists),
+                "domain_age_thresholds": len(self.domain_exposure_validators.age_thresholds),
+                "validations_implemented":"20/23"}

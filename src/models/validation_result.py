@@ -1,8 +1,5 @@
 """
 Modelos de datos para el Email Verifier
-Autor: Tu nombre
-Fecha: 2025
-
 Este archivo contiene las clases de datos utilizadas en todo el sistema.
 """
 
@@ -42,8 +39,6 @@ class ValidationResult:
 class EmailReport:
     """
     Reporte completo de verificación de email
-    
-    Estructura que coincide con el JSON que pidió tu tutor
     """
     email: str
     level: str
